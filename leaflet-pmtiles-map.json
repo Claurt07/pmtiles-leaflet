@@ -1,0 +1,8 @@
+package name: (leaflet-pmtiles-map) leaflet-pmtiles-map
+version: (1.0.0) 1.0.0
+description: A simple Leaflet map with PMTiles
+entry point: (index.js) index.html
+test command:
+git repository:
+keywords: leaflet pmtiles map
+license: (MIT) MIT

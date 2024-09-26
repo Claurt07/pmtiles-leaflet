@@ -1,0 +1,299 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <title>Leaflet with Protomaps PMTiles</title>
+        <link
+            rel="stylesheet"
+            href="https://unpkg.com/leaflet@1.7.1/dist/leaflet.css"
+        />
+        <style>
+            body {
+                font-family: sans-serif;
+                margin: 0;
+                padding: 0;
+                display: flex;
+                flex-direction: column;
+                align-items: center;
+                justify-content: center;
+                height: 100vh;
+            }
+            #map {
+                height: 100vh;
+                width: 100%;
+            }
+            #layers {
+                position: absolute;
+                bottom: 10px;
+                left: 10px;
+                background-color: #fff;
+                padding: 10px;
+                border: 1px solid #ddd;
+                border-radius: 5px;
+                box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+                z-index: 1000;
+            }
+            #title {
+                text-align: center;
+                margin: 20px 0;
+            }
+            h1,
+            h2 {
+                margin: 0;
+            }
+        </style>
+    </head>
+    <body>
+        <div id="title">
+            <h1>Earthquake 2023 Mapping</h1>
+            <h2>Kahramanmaraş, Türkiye</h2>
+        </div>
+        <div id="map"></div>
+        <div id="layers">
+            <h2>Basemaps</h2>
+            <label>
+                <input type="radio" name="layer" value="osm" checked />
+                OpenStreetMap
+            </label>
+            <label>
+                <input type="radio" name="layer" value="satellite" />
+                Satellite
+            </label>
+            <h2>Layer from PMtiles</h2>
+            <label>
+                <input
+                    type="checkbox"
+                    name="filter"
+                    value="buildings"
+                    checked
+                />
+                Buildings
+            </label>
+            <label>
+                <input
+                    type="checkbox"
+                    name="filter"
+                    value="destroyed_buildings"
+                    checked
+                />
+                Destroyed Buildings
+            </label>
+            <label>
+                <input
+                    type="checkbox"
+                    name="filter"
+                    value="ways_line"
+                    checked
+                />
+                Ways Line
+            </label>
+        </div>
+
+        <script src="https://unpkg.com/leaflet@1.7.1/dist/leaflet.js"></script>
+        <script src="https://unpkg.com/protomaps-leaflet@latest/dist/protomaps-leaflet.js"></script>
+        <script>
+            const mapContainer = document.getElementById("map");
+            if (mapContainer) {
+                const map = L.map(mapContainer).setView(
+                    [37.5759364, 36.9283819],
+                    15,
+                );
+
+                const osmUrl =
+                    "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png";
+                const osmLayer = L.tileLayer(osmUrl, {
+                    attribution:
+                        '&copy; <a href="https://www.openstreetmap.org/">OpenStreetMap</a>',
+                    subdomains: ["a", "b", "c"],
+                });
+                osmLayer.addTo(map);
+
+                const satelliteUrl =
+                    "https://services.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}";
+                const satelliteLayer = L.tileLayer(satelliteUrl, {
+                    attribution:
+                        '&copy; <a href="https://www.arcgis.com/">Esri</a>',
+                });
+
+                class BuildingSymbolizer {
+                    constructor(filter) {
+                        this.filter = filter;
+                    }
+
+                    draw(context, geom, z, feature) {
+                        if (
+                            this.filter === "buildings" &&
+                            feature.props.building !== "yes"
+                        )
+                            return;
+                        if (
+                            this.filter === "destroyed_buildings" &&
+                            feature.props.destroyed_building !== "yes"
+                        )
+                            return;
+                        if (
+                            this.filter === "ways_line" &&
+                            feature.props.osm_type !== "ways_line"
+                        )
+                            return;
+
+                        let fill = "rgba(168, 168, 168, 0.5)";
+                        let stroke = "rgba(168, 168, 168, 0.5)";
+                        let lineWidth = 1;
+
+                        if (this.filter === "buildings") {
+                            fill = "lightblue";
+                        } else if (this.filter === "destroyed_buildings") {
+                            fill = "rgba(255, 0, 0, 0.5)";
+                        } else if (this.filter === "ways_line") {
+                            fill = "transparent";
+                            stroke = "rgba(219, 30, 216, 0.5)";
+                            lineWidth = 2;
+                        }
+
+                        context.fillStyle = fill;
+                        context.strokeStyle = "rgba(0, 0, 0, 0.5)";
+                        context.beginPath();
+                        context.moveTo(geom[0][0].x, geom[0][0].y);
+                        for (let i = 1; i < geom[0].length; i++) {
+                            context.lineTo(geom[0][i].x, geom[0][i].y);
+                        }
+                        context.stroke();
+                        context.fill();
+                    }
+                }
+
+                let pmTilesLayer;
+
+                function initializePmTilesLayer(initialFilters) {
+                    let PAINT_RULES = [];
+
+                    if (initialFilters.includes("buildings")) {
+                        PAINT_RULES.push({
+                            dataLayer: "buildings_test",
+                            symbolizer: new BuildingSymbolizer("buildings"),
+                        });
+                    }
+
+                    if (initialFilters.includes("destroyed_buildings")) {
+                        PAINT_RULES.push({
+                            dataLayer: "buildings_test",
+                            symbolizer: new BuildingSymbolizer(
+                                "destroyed_buildings",
+                            ),
+                        });
+                    }
+
+                    if (initialFilters.includes("ways_line")) {
+                        PAINT_RULES.push({
+                            dataLayer: "buildings_test",
+                            symbolizer: new BuildingSymbolizer("ways_line"),
+                        });
+                    }
+
+                    pmTilesLayer = protomapsL.leafletLayer({
+                        // Update the URL to the new location
+                        url: "https://s3.dualstack.us-east-1.amazonaws.com/production-raw-data-api/default/buildings_test_pmtiles_uid_c4824472-d799-421f-b87a-485c61508e9d.pmtiles",
+                        paintRules: PAINT_RULES,
+                        labelRules: [],
+                    });
+
+                    pmTilesLayer.addTo(map);
+                }
+
+                // Call with initial filters
+                initializePmTilesLayer([
+                    "buildings",
+                    "destroyed_buildings",
+                    "ways_line",
+                ]);
+
+                const layerInputs = document.querySelectorAll(
+                    "#layers input[type='radio']",
+                );
+                layerInputs.forEach((input) => {
+                    input.addEventListener("change", (e) => {
+                        if (e.target.value === "osm") {
+                            map.removeLayer(satelliteLayer);
+                            osmLayer.addTo(map);
+                            pmTilesLayer.bringToFront(); // Bring pmTilesLayer to the front
+                        } else if (e.target.value === "satellite") {
+                            map.removeLayer(osmLayer);
+                            satelliteLayer.addTo(map);
+                            pmTilesLayer.bringToFront(); // Bring pmTilesLayer to the front
+                        }
+                    });
+                });
+
+                const filterInputs = document.querySelectorAll(
+                    "#layers input[type='checkbox']",
+                );
+                let currentFilters = [
+                    "buildings",
+                    "destroyed_buildings",
+                    "ways_line",
+                ];
+
+                filterInputs.forEach((input) => {
+                    input.addEventListener("change", (e) => {
+                        const filterValue = e.target.value;
+                        const filterChecked = e.target.checked;
+
+                        if (filterChecked) {
+                            currentFilters.push(filterValue);
+                        } else {
+                            currentFilters = currentFilters.filter(
+                                (filter) => filter !== filterValue,
+                            );
+                        }
+
+                        updatePaintRules();
+                    });
+                });
+
+                function updatePaintRules() {
+                    let PAINT_RULES = [];
+
+                    if (currentFilters.includes("buildings")) {
+                        PAINT_RULES.push({
+                            dataLayer: "buildings_test",
+                            symbolizer: new BuildingSymbolizer("buildings"),
+                        });
+                    }
+
+                    if (currentFilters.includes("destroyed_buildings")) {
+                        PAINT_RULES.push({
+                            dataLayer: "buildings_test",
+                            symbolizer: new BuildingSymbolizer(
+                                "destroyed_buildings",
+                            ),
+                        });
+                    }
+
+                    if (currentFilters.includes("ways_line")) {
+                        PAINT_RULES.push({
+                            dataLayer: "buildings_test",
+                            symbolizer: new BuildingSymbolizer("ways_line"),
+                        });
+                    }
+
+                    // Remove the existing layer
+                    map.removeLayer(pmTilesLayer);
+
+                    // Create a new layer with the updated paint rules
+                    pmTilesLayer = protomapsL.leafletLayer({
+                        url: "data/test-tiles.pmtiles",
+                        paintRules: PAINT_RULES,
+                        labelRules: [],
+                    });
+
+                    // Add the new layer to the map
+                    pmTilesLayer.addTo(map);
+                }
+            } else {
+                console.error("Map container not found");
+            }
+        </script>
+    </body>
+</html>
